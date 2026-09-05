@@ -36,3 +36,7 @@ docker pull registry.yoursite.com/user/app:tag
 └──────────────────────────────────────────────┘
 
 For DeployForge, this is actually useful: you could build exactly that UX on top of Railpack + BuildKit + your own registry/GHCR/ECR:
+
+
+
+![alt text](image.png)
