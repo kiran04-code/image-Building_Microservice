@@ -12,12 +12,20 @@ app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+app.get("/", (_req: Request, res: Response) => {
+  res.json({ status: "ok", message: "Source-to-image service is running." });
+});
+
 app.get("/health", (_req: Request, res: Response) => {
   res.json({ status: "ok", message: "Source-to-image service is running." });
 });
 
 app.use("/api/builds", buildRouter);
 
-app.listen(port, () => {
-  console.log(`Source-to-image service listening on port ${port}`);
-});
+if (process.env.NODE_ENV !== "test" && !process.env.VERCEL) {
+  app.listen(port, () => {
+    console.log(`Source-to-image service listening on port ${port}`);
+  });
+}
+
+export default app;

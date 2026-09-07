@@ -22,6 +22,7 @@ export interface BuildResult {
         pullCommand: string;
     };
     logsUrl?: string;
+    errorMessage?: string;
 }
 export declare function parseGitHubRepoUrl(value: string): {
     owner: string;
