@@ -90,3 +90,8 @@ export async function readBuild(req: Request, res: Response) {
     });
   }
 }
+
+
+export const dummyRoute = async()=>{
+
+}
