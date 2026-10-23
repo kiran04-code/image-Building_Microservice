@@ -95,3 +95,6 @@ export async function readBuild(req: Request, res: Response) {
 export const dummyRoute = async()=>{
 
 }
+export const dummyRoute2 = async()=>{
+
+}
