@@ -95,6 +95,3 @@ export async function readBuild(req: Request, res: Response) {
 export const dummyRoute = async()=>{
 
 }
-export const dummyRoute2 = async()=>{
- console.log(process.env.RAZORPAY_KEY)
-}
