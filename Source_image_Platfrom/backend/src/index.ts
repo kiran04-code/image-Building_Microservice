@@ -6,7 +6,7 @@ import buildRouter from "./routes/build.route.js";
 dotenv.config();
 
 const app = express();
-const port = Number(process.env.PORT) || 3001;
+const port = Number(process.env.PORT) || 3001
 
 app.use(cors());
 app.use(express.json());
