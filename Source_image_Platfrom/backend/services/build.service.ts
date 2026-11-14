@@ -68,33 +68,39 @@ function client() {
 }
 
 function ecrImage(repository: string, tag: string) {
-    const registry = (
+    let registry = (
         process.env.ECR_REGISTRY?.trim() ||
         `${required("AWS_ACCOUNT_ID")}.dkr.ecr.${required("AWS_REGION")}.amazonaws.com`
     ).replace(/\/+$/, "");
-    const cleanRepo = repository.replace(/^\/+/, "");
+    const cleanRepo = repository.replace(/^\/+/, "").replace(/\/+$/, "");
+
+    // Avoid duplicated repository path if ECR_REGISTRY in env already included it
+    if (registry.toLowerCase().endsWith(`/${cleanRepo.toLowerCase()}`)) {
+        registry = registry.slice(0, -(cleanRepo.length + 1));
+    }
+
     const reference = `${registry}/${cleanRepo}:${tag}`;
 
     return { registry, repository: cleanRepo, tag, reference, pullCommand: `docker pull ${reference}` };
 }
 
-function buildSpec(repository: string, tag: string, isPublicEcr: boolean) {
+function buildSpec(isPublicEcr: boolean, awsRegion: string) {
     const loginCommand = isPublicEcr
         ? `aws ecr-public get-login-password --region us-east-1 | docker login --username AWS --password-stdin public.ecr.aws`
-        : `aws ecr get-login-password --region "$AWS_DEFAULT_REGION" | docker login --username AWS --password-stdin "$ECR_REGISTRY"`;
+        : `aws ecr get-login-password --region "${awsRegion}" | docker login --username AWS --password-stdin "$ECR_REGISTRY"`;
 
     return `version: 0.2
 phases:
   pre_build:
     commands:
       - ${loginCommand}
-      - if [ "$DOCKERFILE_GENERATED" = "true" ]; then echo "$IMAGEFORGE_DOCKERFILE_BASE64" | base64 -d > Dockerfile.imageforge; fi
+      - if [ "$DOCKERFILE_GENERATED" = "true" ]; then printf '%s' "$IMAGEFORGE_DOCKERFILE_BASE64" | base64 -d > Dockerfile.imageforge; fi
   build:
     commands:
-      - docker build --file "$DOCKERFILE_PATH" --tag "$ECR_REGISTRY/${repository}:${tag}" .
+      - docker build --file "$DOCKERFILE_PATH" --tag "$IMAGE_URI" .
   post_build:
     commands:
-      - docker push "$ECR_REGISTRY/${repository}:${tag}"
+      - docker push "$IMAGE_URI"
 `;
 }
 
@@ -112,6 +118,12 @@ export async function buildRepository(repoUrl: string, branch?: string): Promise
   const ecrRepository = required("ECR_REPOSITORY");
   const image = ecrImage(ecrRepository, tag);
   const isPublicEcr = image.registry.startsWith("public.ecr.aws");
+  const awsRegion = required("AWS_REGION");
+
+  const dockerfileName = inspectedRepository.files.has("Dockerfile") ? "Dockerfile" : "dockerfile";
+  const dockerfilePath = generatedDockerfile
+      ? "Dockerfile.imageforge"
+      : (project.rootDirectory ? `${project.rootDirectory}/${dockerfileName}` : dockerfileName);
 
   const response = await client().send(
       new StartBuildCommand({
@@ -119,11 +131,13 @@ export async function buildRepository(repoUrl: string, branch?: string): Promise
           sourceTypeOverride: "GITHUB",
           sourceLocationOverride: repository.url,
           sourceVersion: inspectedRepository.defaultBranch,
-          buildspecOverride: buildSpec(image.repository, tag, isPublicEcr),
+          buildspecOverride: buildSpec(isPublicEcr, awsRegion),
           environmentVariablesOverride: [
+              { name: "IMAGE_URI", value: image.reference, type: "PLAINTEXT" },
               { name: "ECR_REGISTRY", value: image.registry, type: "PLAINTEXT" },
+              { name: "AWS_DEFAULT_REGION", value: awsRegion, type: "PLAINTEXT" },
               { name: "DOCKERFILE_GENERATED", value: String(Boolean(generatedDockerfile)), type: "PLAINTEXT" },
-              { name: "DOCKERFILE_PATH", value: generatedDockerfile ? "Dockerfile.imageforge" : "Dockerfile", type: "PLAINTEXT" },
+              { name: "DOCKERFILE_PATH", value: dockerfilePath, type: "PLAINTEXT" },
               ...(generatedDockerfile ? [{ name: "IMAGEFORGE_DOCKERFILE_BASE64", value: Buffer.from(generatedDockerfile).toString("base64"), type: "PLAINTEXT" as const }] : []),
           ],
       }),
@@ -171,6 +185,11 @@ export async function getBuild(id: string): Promise<BuildResult | undefined> {
         ...(errorMessage ? { errorMessage } : {}),
     };
 
+    if (updated.status === "failed") {
+        console.error(`[CodeBuild FAILED] Build ${id} (${saved.providerBuildId}) phase ${failedPhase?.phaseType || "UNKNOWN"} failed:`, errorMessage);
+    }
+
     builds.set(id, updated);
     return updated;
 }
+

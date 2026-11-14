@@ -86,11 +86,16 @@ export async function readBuild(req, res) {
             message: "Build not found.",
         });
     }
-    catch {
+    catch (error) {
+        console.error("READ BUILD ERROR:", error);
         return res.status(500).json({
             code: "INTERNAL_ERROR",
             message: "Unable to read build status.",
         });
     }
 }
+export const dummyRoute = async () => {
+};
+export const dummyRoute2 = async () => {
+};
 //# sourceMappingURL=build.controller.js.map

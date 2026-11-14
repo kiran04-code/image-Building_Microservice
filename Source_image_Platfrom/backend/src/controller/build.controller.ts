@@ -83,7 +83,8 @@ export async function readBuild(req: Request, res: Response) {
       code: "BUILD_NOT_FOUND",
       message: "Build not found.",
     });
-  } catch {
+  } catch (error) {
+    console.error("READ BUILD ERROR:", error);
     return res.status(500).json({
       code: "INTERNAL_ERROR",
       message: "Unable to read build status.",
