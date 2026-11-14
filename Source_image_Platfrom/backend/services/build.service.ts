@@ -146,7 +146,7 @@ export async function buildRepository(repoUrl: string, branch?: string): Promise
     if (!response.build?.id) throw new Error("CODEBUILD_SUBMISSION_FAILED");
 
     const result: BuildResult = {
-        id: `build_${randomUUID()}`,
+        id: `build_${response.build.id}`,
         providerBuildId: response.build.id,
     status: "queued",
     repository: { url: repository.url, owner: repository.owner, name: repository.repo },
@@ -168,15 +168,55 @@ function statusOf(build: Build): BuildStatus {
 }
 
 export async function getBuild(id: string): Promise<BuildResult | undefined> {
-    const saved = builds.get(id);
-    if (!saved) return undefined;
+    let saved = builds.get(id);
+    const providerBuildId = saved?.providerBuildId || (id.startsWith("build_") ? id.slice(6) : id);
 
-    const response = await client().send(new BatchGetBuildsCommand({ ids: [saved.providerBuildId] }));
-    const providerBuild = response.builds?.[0];
+    if (!providerBuildId || !providerBuildId.includes(":")) {
+        if (!saved) return undefined;
+    }
+
+    const targetId = saved?.providerBuildId || providerBuildId;
+    let providerBuild: Build | undefined;
+
+    try {
+        const response = await client().send(new BatchGetBuildsCommand({ ids: [targetId] }));
+        providerBuild = response.builds?.[0];
+    } catch (err) {
+        console.error(`[CodeBuild API Error] Failed to fetch build ${targetId}:`, err);
+        return saved;
+    }
+
     if (!providerBuild) return saved;
 
     const failedPhase = providerBuild.phases?.find((p) => p.phaseStatus === "FAILED");
     const errorMessage = failedPhase?.contexts?.[0]?.message || (providerBuild.buildStatus === "FAILED" ? "Build command failed inside container." : undefined);
+
+    if (!saved) {
+        const repoUrl = providerBuild.source?.location || "";
+        let owner = "unknown";
+        let repo = "unknown";
+        try {
+            const parsed = parseGitHubRepoUrl(repoUrl);
+            owner = parsed.owner;
+            repo = parsed.repo;
+        } catch {}
+
+        const imageUri = providerBuild.environment?.environmentVariables?.find((e) => e.name === "IMAGE_URI")?.value || "";
+        saved = {
+            id,
+            providerBuildId: providerBuild.id || targetId,
+            status: statusOf(providerBuild),
+            repository: { url: repoUrl, owner, name: repo },
+            project: { language: "auto", framework: "auto", port: 80, dockerfileGenerated: true },
+            image: {
+                registry: "",
+                repository: repo,
+                tag: "",
+                reference: imageUri,
+                pullCommand: `docker pull ${imageUri}`,
+            },
+        };
+    }
 
     const updated: BuildResult = {
         ...saved,
@@ -186,7 +226,7 @@ export async function getBuild(id: string): Promise<BuildResult | undefined> {
     };
 
     if (updated.status === "failed") {
-        console.error(`[CodeBuild FAILED] Build ${id} (${saved.providerBuildId}) phase ${failedPhase?.phaseType || "UNKNOWN"} failed:`, errorMessage);
+        console.error(`[CodeBuild FAILED] Build ${id} (${targetId}) phase ${failedPhase?.phaseType || "UNKNOWN"} failed:`, errorMessage);
     }
 
     builds.set(id, updated);

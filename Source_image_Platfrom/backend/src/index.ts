@@ -12,15 +12,15 @@ app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-app.get("/", (_req: Request, res: Response) => {
+app.get(["/", "/health", "/api", "/api/health", "/api/index"], (_req: Request, res: Response) => {
   res.json({ status: "ok", message: "Source-to-image service is running." });
 });
 
-app.get("/health", (_req: Request, res: Response) => {
-  res.json({ status: "ok", message: "Source-to-image service is running." });
-});
+app.use(["/api/builds", "/builds"], buildRouter);
 
-app.use("/api/builds", buildRouter);
+app.use((req: Request, res: Response) => {
+  res.status(404).json({ error: "NOT_FOUND", message: `Cannot ${req.method} ${req.url}` });
+});
 
 if (process.env.NODE_ENV !== "test" && !process.env.VERCEL) {
   app.listen(port, () => {
